@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/time.h>
 using namespace std;
 
 /*
@@ -56,27 +57,50 @@ std::mutex using_queue;
 bool ready = false;
 stack_t stack;
 
-int initscheduler = 0;
+volatile int initscheduler = 0;
 
 
+void scheduler();
 
 void THREAD_YIELD() { 
+    
     cout << "Handling the thing!\n";
+    cout << "Initialized? " << initscheduler << "\n";
+    cout << "Current thread: " << current_thread->thread_id << "\n" ;
+    current_thread->context_changed = 1;
     if (setjmp(current_thread->saved_context) == 0) {
         cout << "Changed context!\n";
+        using_queue.lock();
+        threads.pop();
+        threads.push(current_thread);
+        current_thread = threads.front();
+        using_queue.unlock();
+        
+        //scheduler();
         longjmp(sched, 1);
     }
+    
 } 
 
 void scheduler() {
 
-    if(!initscheduler) {
+    //Scheduler just schedules the current top thread
+    cout << "Scheduler\n";
+    if(setjmp(sched) == 0) {
+        using_queue.lock();
+        cout << "Scheduling process!\n";
+        current_thread = threads.front();
+        cout << current_thread->thread_id;
+        using_queue.unlock();
+
+        //Current thread has to be initialized first!        
+        if(!initscheduler) {
         cout << "Initializing scheduler\n";
         struct sigaction sa;
-    // Create the new stack
+        // Create the new stack
         stack.ss_flags = 0;
         stack.ss_size = 1024*64;
-        stack.ss_sp = malloc( 1024*64 );
+        stack.ss_sp = malloc( 1024*512 );
         cout << "Got stack!";
         sigaltstack( &stack, 0 );
 
@@ -86,34 +110,40 @@ void scheduler() {
         sigaction( SIGALRM, &sa, 0 );
         
         initscheduler = 1;
-        ualarm(500, 500);
-    }   
+       
+    }  
+
+         struct itimerval timer; 
+
+         timer.it_value.tv_sec = 0;
+         timer.it_value.tv_usec = 500;
         
-    //Scheduler just schedules the current top thread
-    cout << "Scheduler\n";
-    if(setjmp(sched) == 0) {
-        using_queue.lock();
-        cout << "Scheduling process!\n";
-        current_thread = threads.front();
-        using_queue.unlock();
+         setitimer(ITIMER_REAL, &timer, NULL);
+        //ualarm(500,0);
         current_thread->func(current_thread->arg);
+        
     } else {
-        cout << "Back to scheduler!\n";
-        using_queue.lock();
-        threads.pop();
-        threads.push(current_thread);
-        current_thread = threads.front();
-        using_queue.unlock();
+        
+         struct itimerval timer; 
+
+         timer.it_value.tv_sec = 0;
+         timer.it_value.tv_usec = 500;
+        //ualarm(500,0);
+        cout << setitimer(ITIMER_REAL, &timer, NULL) << "\n";
+
         
         if(current_thread->context_changed) {
             cout << "Trying to restore previous context!\n";
+            std::this_thread::sleep_for(2s);
             longjmp(current_thread->saved_context,1);
         } else {
+            cout << "Entered here again!\n";
+            //std::this_thread::sleep_for(1s);
             current_thread->func(current_thread->arg);
-        }   
+        }  
     }
             
-    } 
+} 
 
 /*#define thread_yield() {\
     //Store the context for the thread here
@@ -149,18 +179,20 @@ int thread_create(void *(*start_routine) (void *), void* arg) {
         
 }
 
-void some_function() {
+void some_function(int counter) {
     cout << "Entered function\n";
-    int counter = 1;
+    //int counter = 1;
     int i;
-
+    int a = 0;
     while(1) {
         cout << "Trying to run\n";    
         
-        for( i=0; i < 10; i++) {
-            cout << "Executing function!: " << counter << "\n";
+        for( i=0; i < 100; i++) {
+            a += i;
         }
-    
+
+        cout << "Executing function!: " << counter << " Sum value is " << a << "\n";
+
     }
     
 }
@@ -177,7 +209,7 @@ int main() {
     
     thread_create(some_function, 4);
 
-    std::this_thread::sleep_for(10s);
+    std::this_thread::sleep_for(100s);
     
 
 }
