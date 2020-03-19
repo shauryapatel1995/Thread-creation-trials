@@ -63,7 +63,7 @@ std::unique_lock<std::mutex> lk(m);
 std::mutex using_queue;
 bool ready = false;
 stack_t stack;
-
+bool signalset = false;
 volatile int initscheduler = 0;
 
 
@@ -76,6 +76,7 @@ void THREAD_YIELD(int signum) {
         
     //cout << "Handling the thing!\n";
     //cout << "Current thread: " << current_thread->thread_id << "\n" ;
+    signalset = true;
     swapcontext(&(current_thread->saved_context),&sched);
     } else {
         //cout << "Oh Fuck!\n";
@@ -185,7 +186,14 @@ void scheduler() {
         
         swapcontext(&sched, &(current_thread->saved_context));   
         
-         if(threads.size() == 0){ 
+        //TODO: Check if we have come from the threads context or the interuppt context
+        // If interuppt continue if not then we call thread_exit
+        if(signalset) 
+            signalset = false;
+        else 
+            thread_exit();
+        
+        if(threads.size() == 0){ 
              //cout << "Threads pending are: " << threads.size() << "\n";
              return;
          }
@@ -257,7 +265,7 @@ void foo() {
 	//cout << "Thread finished executing : " << std::this_thread::get_id() << " " << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "\n";
 	//thread_times.insert(std::pair<std::thread::id, double>(std::this_thread::get_id(),std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count()));
     cout << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "\n";
-    thread_exit();
+    //thread_exit();
 }
 
 
